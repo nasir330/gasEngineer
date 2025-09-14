@@ -6,15 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UserLoginRequest;
 use App\Http\Requests\UserStoreRequest;
 use App\Models\User;
+use App\Traits\AuthErrorResponses;
 use App\Traits\HttpResponses;
 use Illuminate\Auth\Events\Validated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-      use HttpResponses;
+      use HttpResponses, AuthErrorResponses;
       // Register method
       public function register(UserStoreRequest $request)
       {
@@ -34,15 +37,33 @@ class AuthController extends Controller
       public function login(UserLoginRequest $request)
       {
             $validation = $request->validated();
+            $email = $validation['email'];
+            $password = $validation['password'];
+
+            //rate limiter for too many login attempts
+            $throttleKey = Str::lower($email) . '|' . $request->ip();
+            $maxAttempts = 5;
+            $delaySeconds = 60;
+            if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+                  $seconds = RateLimiter::availableIn($throttleKey);
+                  return response()->json([
+                        'message' => "Too many login attempts. Try again in $seconds seconds.",
+                  ], 429);
+            }
+            //check user credentials
             $user = User::firstWhere('email', $validation['email']);
 
             if (!$user) {
-                  return $this->error(['email' => 'No user registered with this email'], 'Invalid credentials', 401);
+                  RateLimiter::hit($throttleKey, $delaySeconds);
+                  return $this->emailError();
             }
-
             if (!Hash::check($validation['password'], $user->password)) {
-                  return $this->error(['password' => 'Incorrect password'], 'Invalid credentials', 401);
+                  RateLimiter::hit($throttleKey, $delaySeconds);
+                  return $this->passwordError();
             }
+            // clear attempts on successful login
+            RateLimiter::clear($throttleKey);
+
             return $this->success([
                   'user' => $user,
                   'token' => $user->createToken('API token of ' . $user->name)->plainTextToken
