@@ -31,7 +31,7 @@ class AuthController extends Controller
             return $this->success([
                   'user' => $user,
                   'token' => $user->createToken('API Token of ' . $user->name)->plainTextToken
-            ]);
+            ], "User Registered Successfully", 201);
       }
       // Login method
       public function login(UserLoginRequest $request)
@@ -67,7 +67,7 @@ class AuthController extends Controller
             return $this->success([
                   'user' => $user,
                   'token' => $user->createToken('API token of ' . $user->name)->plainTextToken
-            ]);
+            ], "User Logged In Successfully", 200);
       }
 
       // Logout method
